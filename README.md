@@ -1,13 +1,45 @@
 # ZeroNVS
 
+#### changes in this fork by otoshuki
+### Version with support for RTX5090 setups and Python 3.10
+The following changes are considered:
+* Changed requirements-zeronvs.txt to include version numbers specific to late 2023 releases. Prevents wrongly installing the newer versions.
+* This version requires Python 3.10, runs on CUDA Toolkit 12.9 that was required by RTX5090, and also newer version of torch.
+* Including my pip list.
+* Please install torch nightly build from official website.
+* Changed zero123_guidance.py file for errors with loading trained model.
+
+### IMPORTANT INSTRUCTIONS
+If you have some VRAM issues or want to improve the inference timings, it wasn't explicitly mentioned where to change them. Go to configs/zero123_scene.yaml to change these properties. I have updated it to allow it to run at <32GBs for my GPU. This file has the following important configurations (at least the ones I use):
+* random_camera: elevation_range, and azimuth_range; for the output ranges
+* random_camera: batch_size; Can be reduced for [6, 1] to [4, 1] for memory issues.
+* system/geometry/mlp_network_config: n_neuron and system/renderer/proposal_network_configuration: n_neurons; can be decreased a bit for faster inference and memory issues.
+* trainer: max_steps, and val_check_interval; Can be changed to limit the training steps.
+
+** Please note that some of these solutions were provided in some of the old issues in original repo but just not mentioned properly in the README file.
+
+### ANOTHER POSSIBLE ISSUE
+In my case I had to manually download nerfacc from their official repo and perform `pip install -e .` to allow support for newer version of cuda. But just before this installation you have to set up the CUDA ARCHITECTURE (sm120 in RTX5090) and CUDA HOME paths:
+```
+export CUDA_HOME=/usr/local/cuda-12.9
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export CPLUS_INCLUDE_PATH=$CUDA_HOME/include:$CPLUS_INCLUDE_PATH
+export CC=/usr/bin/gcc
+export CXX=/usr/bin/g++
+export TORCH_CUDA_ARCH_LIST="12.0"
+export CFLAGS="-gencode=arch=compute_120,code=sm_120"
+```
+You might not need this if you have an older GPU.
+
 ## [Webpage (with video results)](https://kylesargent.github.io/zeronvs/) | [Paper](http://arxiv.org/abs/2310.17994)
 
-This is the offical code release for ZeroNVS: Zero-Shot 360-Degree View Synthesis from a Single Real Image. 
+This is the offical code release for ZeroNVS: Zero-Shot 360-Degree View Synthesis from a Single Real Image.
 
 ![teaser image](zeronvs_teaser.png "ZeroNVS results.")
 
 ### What is in this repository: 3D SDS distillation code, evaluation code, trained models
-In this repository, we currently provide code to reproduce our main evaluations and also to run ZeroNVS to distill NeRFs from your own images. This includes scripts to reproduce the main metrics on DTU and Mip-NeRF 360 datasets. 
+In this repository, we currently provide code to reproduce our main evaluations and also to run ZeroNVS to distill NeRFs from your own images. This includes scripts to reproduce the main metrics on DTU and Mip-NeRF 360 datasets.
 
 ### How do I train my own diffusion models?
 Check out the companion repository, https://github.com/kylesargent/zeronvs_diffusion.
@@ -54,9 +86,9 @@ cd ..
 ```
 
 # Data and models
-Since we have experimented with a variety of datasets in ZeroNVS, the codebase consumes a few different types of data formats. 
+Since we have experimented with a variety of datasets in ZeroNVS, the codebase consumes a few different types of data formats.
 
-To download all the relevant data and models, you can run the following commands within the zeronvs conda environment 
+To download all the relevant data and models, you can run the following commands within the zeronvs conda environment
 ```
 gdown --fuzzy https://drive.google.com/file/d/1q0oMpp2Vy09-0LA-JXpo_ZoX2PH5j8oP/view?usp=sharing
 gdown --fuzzy https://drive.google.com/file/d/1aTSmJa8Oo2qCc2Ce2kT90MHEA6UTSBKj/view?usp=drive_link
@@ -82,7 +114,7 @@ Evaluation is performed by distilling a NeRF for each of the scenes in the datas
 
 Note that you can still achieve good performance with much faster config options; for instance, reduced resolution, batch size, number of training steps, or some combination. The code as-is is just intended to reproduce the results from the paper.
 
-After downloading the data and models, you can run the evals via either `launch_eval_dtu.sh` or `launch_eval_mipnerf360`. The metrics for each scene will be saved in `metrics.json` files which you must average to get the final performance. 
+After downloading the data and models, you can run the evals via either `launch_eval_dtu.sh` or `launch_eval_mipnerf360`. The metrics for each scene will be saved in `metrics.json` files which you must average to get the final performance.
 
 We provide the expected performance for individual scenes in the tables below. Note that there is some randomness inherent in SDS distillation, so you may not get exactly these numbers (though the performance should be quite close, especially on average).
 

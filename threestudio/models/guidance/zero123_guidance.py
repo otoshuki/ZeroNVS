@@ -101,7 +101,7 @@ def instantiate_from_config(config):
 
 # load model
 def load_model_from_config(config, ckpt, device, vram_O=True, verbose=False):
-    pl_sd = torch.load(ckpt, map_location="cpu")
+    pl_sd = torch.load(ckpt, map_location="cpu", weights_only=False)
 
     if "global_step" in pl_sd and verbose:
         print(f'[INFO] Global Step: {pl_sd["global_step"]}')
@@ -549,7 +549,7 @@ class Zero123Guidance(BaseObject):
 
         if aux['nearest_idxs'] is not None:
             is_main_camera = (torch.stack(aux['nearest_idxs']) == 0)[:, None, None, None]
-            is_aux_camera = ~is_main_camera 
+            is_aux_camera = ~is_main_camera
 
             v_guidance_scale = self.cfg.guidance_scale * is_main_camera + self.cfg.guidance_scale_aux * is_aux_camera
         else:
