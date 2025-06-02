@@ -26,6 +26,7 @@ import numpy as np
 import pickle
 import viz
 
+from torchvision.utils import save_image
 
 def _quantize(t):
     # t is in range [0, 1]
@@ -88,15 +89,15 @@ class Zero123(BaseLift3DSystem):
         all_images = (
             self.trainer.datamodule.train_dataloader().dataset.get_all_images_fullres()
         )
-        self.save_image_grid(
-            "all_training_images.png",
-            [
-                {"type": "rgb", "img": image, "kwargs": {"data_format": "HWC"}}
-                for image in all_images
-            ],
-            name="on_fit_start",
-            step=self.true_global_step,
-        )
+        # self.save_image_grid(
+        #     "all_training_images.png",
+        #     [
+        #         {"type": "rgb", "img": image, "kwargs": {"data_format": "HWC"}}
+        #         for image in all_images
+        #     ],
+        #     name="on_fit_start",
+        #     step=self.true_global_step,
+        # )
 
         self.pearson = PearsonCorrCoef().to(self.device)
 
@@ -540,110 +541,119 @@ class Zero123(BaseLift3DSystem):
     def test_step(self, batch, batch_idx):
         out = self(batch)
 
-        if "gt_rgb" in batch:
-            gt_view = batch["gt_rgb"] / 2 + 0.5
-            pred_view = out["comp_rgb"]
+        ##########CUSTOM FOR 2 IMAGES
+        save_dir = os.path.join(self.get_save_dir(), "single_views")
+        os.makedirs(save_dir, exist_ok=True)
+        azimuth = batch["azimuth"].item()
+        img_tensor = out["comp_rgb"][0].permute(2, 0, 1)
+        save_path = os.path.join(save_dir, f"azimuth_{int(azimuth)}.png")
+        save_image(img_tensor, save_path)
+        ##########
 
-            view_synthesis_cfg = self.trainer.datamodule.cfg.view_synthesis
-
-            if view_synthesis_cfg.quantize:
-                gt_view = _quantize(gt_view)
-                pred_view = _quantize(pred_view)
-
-            # import pdb
-            # pdb.set_trace()
-
-            lpips = (
-                self.lpips_fn(
-                    pred_view.permute((0, 3, 1, 2)).to(torch.float32).to(self.device)
-                    * 2
-                    - 1,
-                    gt_view.permute((0, 3, 1, 2)).to(torch.float32).to(self.device) * 2
-                    - 1,
-                )
-                .cpu()
-                .numpy()
-            )
-            lpips = lpips.item()
-
-            psnr = peak_signal_noise_ratio(
-                gt_view.cpu().numpy(), pred_view.cpu().numpy(), data_range=1.0
-            )
-
-            # assert pred_view.min() >= 0.
-            # assert pred_view.max() <= 1.
-
-            ssim = structural_similarity(
-                gt_view[0].cpu().numpy(),
-                pred_view[0].cpu().numpy(),
-                data_range=1.0,
-                channel_axis=2,
-            )
-
-            # import pdb
-            # pdb.set_trace()
-
-            metrics = dict(ssim=ssim, psnr=psnr, lpips=lpips)
-
-            if (
-                batch["index"] != batch["test_input_idx"]
-                and batch["index"].item()
-                not in self.trainer.datamodule.cfg.view_synthesis.excluded_views
-            ):
-                self.test_step_outputs.append(metrics)
-
-        self.save_image_grid(
-            f"it{self.true_global_step}-test/{batch['index'][0]}.png",
-            (
-                [
-                    {
-                        "type": "rgb",
-                        "img": batch["gt_rgb"][0] / 2 + 0.5,
-                        "kwargs": {"data_format": "HWC"},
-                    }
-                ]
-                if "gt_rgb" in batch
-                else []
-            )
-            + [
-                {
-                    "type": "rgb",
-                    "img": out["comp_rgb"][0],
-                    "kwargs": {"data_format": "HWC"},
-                },
-            ]
-            + (
-                [
-                    {
-                        "type": "rgb",
-                        "img": out["comp_normal"][0],
-                        "kwargs": {"data_format": "HWC", "data_range": (0, 1)},
-                    }
-                ]
-                if "comp_normal" in out
-                else []
-            )
-            + (
-                [
-                    {
-                        "type": "grayscale",
-                        "img": out["depth"][0],
-                        "kwargs": {},
-                    }
-                ]
-                if "depth" in out
-                else []
-            )
-            + [
-                {
-                    "type": "grayscale",
-                    "img": out["opacity"][0, :, :, 0],
-                    "kwargs": {"cmap": None, "data_range": (0, 1)},
-                },
-            ],
-            name="test_step",
-            step=self.true_global_step,
-        )
+        # if "gt_rgb" in batch:
+        #     gt_view = batch["gt_rgb"] / 2 + 0.5
+        #     pred_view = out["comp_rgb"]
+        #
+        #     view_synthesis_cfg = self.trainer.datamodule.cfg.view_synthesis
+        #
+        #     if view_synthesis_cfg.quantize:
+        #         gt_view = _quantize(gt_view)
+        #         pred_view = _quantize(pred_view)
+        #
+        #     # import pdb
+        #     # pdb.set_trace()
+        #
+        #     lpips = (
+        #         self.lpips_fn(
+        #             pred_view.permute((0, 3, 1, 2)).to(torch.float32).to(self.device)
+        #             * 2
+        #             - 1,
+        #             gt_view.permute((0, 3, 1, 2)).to(torch.float32).to(self.device) * 2
+        #             - 1,
+        #         )
+        #         .cpu()
+        #         .numpy()
+        #     )
+        #     lpips = lpips.item()
+        #
+        #     psnr = peak_signal_noise_ratio(
+        #         gt_view.cpu().numpy(), pred_view.cpu().numpy(), data_range=1.0
+        #     )
+        #
+        #     # assert pred_view.min() >= 0.
+        #     # assert pred_view.max() <= 1.
+        #
+        #     ssim = structural_similarity(
+        #         gt_view[0].cpu().numpy(),
+        #         pred_view[0].cpu().numpy(),
+        #         data_range=1.0,
+        #         channel_axis=2,
+        #     )
+        #
+        #     # import pdb
+        #     # pdb.set_trace()
+        #
+        #     metrics = dict(ssim=ssim, psnr=psnr, lpips=lpips)
+        #
+        #     if (
+        #         batch["index"] != batch["test_input_idx"]
+        #         and batch["index"].item()
+        #         not in self.trainer.datamodule.cfg.view_synthesis.excluded_views
+        #     ):
+        #         self.test_step_outputs.append(metrics)
+        #
+        # self.save_image_grid(
+        #     f"it{self.true_global_step}-test/{batch['index'][0]}.png",
+        #     (
+        #         [
+        #             {
+        #                 "type": "rgb",
+        #                 "img": batch["gt_rgb"][0] / 2 + 0.5,
+        #                 "kwargs": {"data_format": "HWC"},
+        #             }
+        #         ]
+        #         if "gt_rgb" in batch
+        #         else []
+        #     )
+        #     + [
+        #         {
+        #             "type": "rgb",
+        #             "img": out["comp_rgb"][0],
+        #             "kwargs": {"data_format": "HWC"},
+        #         },
+        #     ]
+        #     + (
+        #         [
+        #             {
+        #                 "type": "rgb",
+        #                 "img": out["comp_normal"][0],
+        #                 "kwargs": {"data_format": "HWC", "data_range": (0, 1)},
+        #             }
+        #         ]
+        #         if "comp_normal" in out
+        #         else []
+        #     )
+        #     + (
+        #         [
+        #             {
+        #                 "type": "grayscale",
+        #                 "img": out["depth"][0],
+        #                 "kwargs": {},
+        #             }
+        #         ]
+        #         if "depth" in out
+        #         else []
+        #     )
+        #     + [
+        #         {
+        #             "type": "grayscale",
+        #             "img": out["opacity"][0, :, :, 0],
+        #             "kwargs": {"cmap": None, "data_range": (0, 1)},
+        #         },
+        #     ],
+        #     name="test_step",
+        #     step=self.true_global_step,
+        # )
 
     def on_test_epoch_end(self, *args, **kwargs):
         if self.test_step_outputs:
@@ -663,15 +673,16 @@ class Zero123(BaseLift3DSystem):
                 )
                 image.save(os.path.join(self.get_save_dir(), f"aux_pred_{i}.png"))
 
-        self.save_img_sequence(
-            f"it{self.true_global_step}-test",
-            f"it{self.true_global_step}-test",
-            "(\d+)\.png",
-            save_format="mp4",
-            fps=30,
-            name="test",
-            step=self.true_global_step,
-        )
-        shutil.rmtree(
-            os.path.join(self.get_save_dir(), f"it{self.true_global_step}-test")
-        )
+        #########CUSTOM FOR 2 IMAGES
+        # self.save_img_sequence(
+        #     f"it{self.true_global_step}-test",
+        #     f"it{self.true_global_step}-test",
+        #     "(\d+)\.png",
+        #     save_format="mp4",
+        #     fps=30,
+        #     name="test",
+        #     step=self.true_global_step,
+        # )
+        # shutil.rmtree(
+        #     os.path.join(self.get_save_dir(), f"it{self.true_global_step}-test")
+        # )

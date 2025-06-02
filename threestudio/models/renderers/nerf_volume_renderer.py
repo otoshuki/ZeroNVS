@@ -153,9 +153,10 @@ class NeRFVolumeRenderer(VolumeRenderer):
                 if self.cfg.prop_scheduler_config is not None
                 else None
             )
-            self.estimator = nerfacc.PropNetEstimator(
+            self.estimator = torch.compile(nerfacc.PropNetEstimator(
                 self.prop_optim, self.prop_scheduler
-            )
+            ))
+
             self.estimator.compute_loss = lambda *args: _patch_propnet_compute_loss(
                 self.estimator, *args
             )

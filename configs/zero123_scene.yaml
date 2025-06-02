@@ -6,9 +6,9 @@ seed: 0
 data_type: "single-image-datamodule"
 data: # threestudio/data/image.py -> SingleImageDataModuleConfig
   image_path: /tmp/input_image_rgba.png
-  height: [128, 256]
-  width: [128, 256]
-  resolution_milestones: [2000]
+  height: 128
+  width: 128
+  resolution_milestones: [1000]
   default_elevation_deg: 20.0
   default_azimuth_deg: 0.0
   default_camera_distance: 1.0
@@ -29,19 +29,24 @@ data: # threestudio/data/image.py -> SingleImageDataModuleConfig
     excluded_views: []
 
   random_camera: # threestudio/data/uncond.py -> RandomCameraDataModuleConfig
-    height: [128, 256]
-    width: [128, 256]
-    batch_size: [6, 1]
-    resolution_milestones: [2000]
-    eval_height: 128
-    eval_width: 128
+    height: [64, 64]
+    width: [64, 64]
+    # height: [32, 32]
+    # width: [32, 32]
+    batch_size: [2, 1]
+    resolution_milestones: [1000] #Not needed
+    eval_height: 64
+    eval_width: 64
+    # eval_height: 32
+    # eval_width: 32
     eval_batch_size: 1
-    elevation_range: [5, 80]
-    azimuth_range: [-180, 180]
+    elevation_range: [20, 20]
+    azimuth_range: [-60, 60]
     # azimuth_range: [75, 105]
     camera_distance_range: [.8, 1.8]
     fovy_range: [48.9183, 48.9183] # Zero123 has fixed fovy
-    progressive_until: 1000
+    # progressive_until: 1000
+    progressive_until: 0
     camera_perturb: 0.0
     center_perturb: 0.0
     up_perturb: 0.0
@@ -50,11 +55,11 @@ data: # threestudio/data/image.py -> SingleImageDataModuleConfig
     eval_elevation_deg: ${data.default_elevation_deg}
     eval_camera_distance: ${data.default_camera_distance}
     eval_fovy_deg: ${data.default_fovy_deg}
-    light_sample_strategy: "dreamfusion"
+    # light_sample_strategy: "dreamfusion"
+    light_sample_strategy: "magic3d"
     batch_uniform_azimuth: False
-    n_val_views: 100
-    n_test_views: 100
-
+    n_val_views: 2
+    n_test_views: 2
 
 system_type: "zero123-system"
 system:
@@ -62,6 +67,7 @@ system:
   geometry:
     radius: 2.0
     normal_type: "analytic"
+    # normal_type: "pred"
     # use Magic3D density initialization instead
     density_bias: "blob_magic3d"
     density_activation: softplus
@@ -71,9 +77,9 @@ system:
     # to ensure smooth analytic normals
     pos_encoding_config:
       otype: HashGrid
-      n_levels: 16
+      n_levels: 8
       n_features_per_level: 2
-      log2_hashmap_size: 19
+      log2_hashmap_size: 16
       base_resolution: 16
       per_level_scale: 1.447269237440378 # max resolution 4096
     mlp_network_config:
@@ -85,7 +91,7 @@ system:
 
   material_type: "diffuse-with-point-light-material"
   material:
-    ambient_only_steps: 100000
+    ambient_only_steps: 2001
     textureless_prob: 0.05
     albedo_activation: sigmoid
 
@@ -101,7 +107,6 @@ system:
     random_aug: true
     random_aug_prob: 1.0
 
-
   renderer_type: "nerf-volume-renderer"
   renderer:
     radius: ${system.geometry.radius}
@@ -116,12 +121,13 @@ system:
     far_plane: 100.
     # used if estimator=importance
     sampling_type: lindisp
-    num_samples_per_ray: 64
-    num_samples_per_ray_importance: 32
+    num_samples_per_ray: 8
+    num_samples_per_ray_proposal: 8
+    num_samples_per_ray_importance: 4
 
     ## proposal
     # num_samples_per_ray: 32
-    num_samples_per_ray_proposal: 64
+
     # near_plane: 0.1
     # far_plane: 4.0
     proposal_network_config:
@@ -129,21 +135,22 @@ system:
       n_output_dims: 1
       encoding_config:
         otype: HashGrid
-        n_levels: 5
-        n_features_per_level: 2
-        log2_hashmap_size: 17
+        n_levels: 4
+        n_features_per_level: 1
+        log2_hashmap_size: 16
         base_resolution: 16
-        per_level_scale: 1.681792830507429 # max_resolution: 128
+        per_level_scale: 1.447269237440378 # max_resolution: 128
       network_config:
         otype: VanillaMLP
         activation: ReLU
         output_activation: none
-        n_neurons: 64
+        n_neurons: 8
         n_hidden_layers: 1
     prop_optimizer_config:
       name: Adam
       args:
-        lr: .005
+        # lr: 1e-3
+        lr: 5e-3
         eps: 1.0e-15
         weight_decay: 1.0e-6
     # prop_scheduler_config:
@@ -164,20 +171,23 @@ system:
     # pretrained_model_name_or_path: "/home/jupyter/objaverse_6dof_5000.ckpt"
     pretrained_model_name_or_path: "/home/jupyter/threestudio/load/zero123/zero123-7dof-fov.ckpt"
     pretrained_config: "/home/jupyter/threestudio/load/zero123/2023-07-25T05-55-47-project.yaml"
-    vram_O: False
+    vram_O: True
     p_use_aux_cameras: [0, 1., 0., 2000]
     cond_image_path: /tmp/input_image_guidance_rgba.png
     cond_elevation_deg: ${data.default_elevation_deg}
     cond_azimuth_deg: ${data.default_azimuth_deg}
     cond_camera_distance: ${data.default_camera_distance}
     guidance_scale: 7.5
+    # guidance_scale: 6.0
     guidance_scale_aux: ${system.guidance.guidance_scale}
     precomputed_scale: .7
     # min_step_percent: 0.02
     min_step_percent: [0,.75,.02,1000]
+    # min_step_percent: [0, 0.5, 0.02, 500]
     # min_step_percent: [0, 0.4, 0.2, 200]  # (start_iter, start_val, end_val, end_iter)
     # max_step_percent: 0.98
     max_step_percent: [1000, 0.98, 0.025, 2500]
+    # max_step_percent: [500, 0.8, 0.025, 1000]
 
     depth_threshold_for_anchor_guidance: 0.
 
@@ -193,34 +203,54 @@ system:
       project: "threestudio"
       name: None
 
+  # loss:
+  #   lambda_sds: 0.1
+  #   lambda_clip: 0.
+  #   lambda_rgb: 1500.
+  #   lambda_mask: 0.
+  #   lambda_depth: 0. # 0.05
+  #   lambda_depth_rel: 0. # [0, 0, 0.05, 100]
+  #   lambda_normal: 0. # [0, 0, 0.05, 100]
+  #   lambda_normal_smooth: 8.0
+  #   lambda_3d_normal_smooth: 0.0
+  #   lambda_orient: 5.0
+  #   lambda_distortion: 0.0
+  #   lambda_sparsity: 0.0 # should be tweaked for every model
+  #   # tries to enforce that surfaces should be sharp
+  #   lambda_opaque: 0.0
+
   loss:
-    lambda_sds: 0.1
+    lambda_sds: 0.2
     lambda_clip: 0.
-    lambda_rgb: 1500.
+    # lambda_rgb: 1500.
+    lambda_rgb: 0.
     lambda_mask: 0.
     lambda_depth: 0. # 0.05
     lambda_depth_rel: 0. # [0, 0, 0.05, 100]
     lambda_normal: 0. # [0, 0, 0.05, 100]
     lambda_normal_smooth: 8.0
+    # lambda_normal_smooth: 0.0
     lambda_3d_normal_smooth: 0.0
     lambda_orient: 5.0
+    # lambda_orient: 0.0
     lambda_distortion: 0.0
     lambda_sparsity: 0.0 # should be tweaked for every model
     # tries to enforce that surfaces should be sharp
     lambda_opaque: 0.0
 
+
   optimizer:
     name: Adam
     args:
-      lr: 0.005
+      lr: 5e-3
       betas: [0.9, 0.99]
       eps: 1.e-8
 
 trainer:
-  max_steps: 1000
-  log_every_n_steps: 1
+  max_steps: 5000
+  log_every_n_steps: 5000
   num_sanity_val_steps: 0
-  val_check_interval: 100
+  val_check_interval: 5000
   enable_progress_bar: true
   precision: 16-mixed
 

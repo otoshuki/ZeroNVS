@@ -3,14 +3,18 @@ CKPT_PATH='zeronvs.ckpt'
 CONFIG_PATH='zeronvs_config.yaml'
 
 # Set these yourself!
-IMAGE_PATH='motorcycle.png'
+IMAGE_PATH='smallmoto.png'
 FOV=52.55
 ELEVATION_DEG=31.0
+SCALE=0.7
+
+# IMAGE_PATH='rob.png'
+# FOV=60.0
+# ELEVATION_DEG=30.0
+# SCALE=0.8
 
 # How close is the content to the camera (smaller is closer)
 # See paper for details.
-SCALE=0.7
-
 
 python launch.py --config configs/zero123_scene.yaml --train --gpu 0 \
     system.guidance.cond_image_path=$IMAGE_PATH \
@@ -32,5 +36,3 @@ python launch.py --config configs/zero123_scene.yaml --train --gpu 0 \
     system.guidance.precomputed_scale=$SCALE \
     system.guidance.use_anisotropic_schedule=true \
     system.guidance.anisotropic_offset=1000
-    
-    

@@ -26,11 +26,20 @@ def contract_to_unisphere(
 
         x = scale_tensor(x, bbox, (0, 1))
         x = x * 2 - 1  # aabb is at [-1, 1]
+        # mag = x.norm(dim=-1, keepdim=True)
+        # mask = mag.squeeze(-1) > 1
+        # x = x.clone()
+        # x[mask] = (2 - 1 / mag[mask]) * (x[mask] / mag[mask])
+        # x = x / 4 + 0.5  # [-inf, inf] is at [0, 1]
+
+        #### FOR TORCH.COMPILE
         mag = x.norm(dim=-1, keepdim=True)
-        mask = mag.squeeze(-1) > 1
-        x = x.clone()
-        x[mask] = (2 - 1 / mag[mask]) * (x[mask] / mag[mask])
-        x = x / 4 + 0.5  # [-inf, inf] is at [0, 1]
+        mask = (mag > 1.0)
+        x = torch.where(
+            mask,
+            (2 - 1 / mag) * (x / mag),
+            x
+        )
     else:
         x = scale_tensor(x, bbox, (0, 1))
     return x

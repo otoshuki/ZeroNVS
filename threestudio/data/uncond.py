@@ -103,7 +103,8 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
         # self.progressive_view(1)
 
     def update_step(self, epoch: int, global_step: int, on_load_weights: bool = False):
-        size_ind = bisect.bisect_right(self.resolution_milestones, global_step) - 1
+        # size_ind = bisect.bisect_right(self.resolution_milestones, global_step) - 1
+        size_ind = 0
         self.height = self.heights[size_ind]
         self.width = self.widths[size_ind]
         self.batch_size = self.batch_sizes[size_ind]
@@ -112,7 +113,7 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
             f"Training height: {self.height}, width: {self.width}, batch_size: {self.batch_size}"
         )
         # progressive view
-        self.progressive_view(global_step)
+        # self.progressive_view(global_step)
 
     def __iter__(self):
         while True:
@@ -352,9 +353,13 @@ class RandomCameraDataset(Dataset):
         azimuth_deg: Float[Tensor, "B"]
         if self.split == "val":
             # make sure the first and last view are not the same
-            azimuth_deg = torch.linspace(0, 360.0, self.n_views + 1)[: self.n_views]
+            # azimuth_deg = torch.linspace(0, 360.0, self.n_views + 1)[: self.n_views]
+            azimuth_deg = torch.tensor([60.0, 30, -30, -60.0])
+            self.n_views = 4
         else:
-            azimuth_deg = torch.linspace(0, 360.0, self.n_views)
+            # azimuth_deg = torch.linspace(0, 360.0, self.n_views)
+            azimuth_deg = torch.tensor([60.0, 30, -30, -60.0])
+            self.n_views = 4
         elevation_deg: Float[Tensor, "B"] = torch.full_like(
             azimuth_deg, self.cfg.eval_elevation_deg
         )

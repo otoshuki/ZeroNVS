@@ -48,10 +48,10 @@ class BaseSystem(pl.LightningModule, Updateable, SaverMixin):
             self.load_weights(self.cfg.weights, self.cfg.weights_ignore_modules)
         self.post_configure()
 
-        self.lpips_fn = lpips.LPIPS(
-            net="vgg"
-            # model_path=lpips_model_path,
-        ).to(self.device)
+        # self.lpips_fn = lpips.LPIPS(
+        #     net="vgg"
+        #     # model_path=lpips_model_path,
+        # ).to(self.device)
 
         self.test_step_outputs = []
 

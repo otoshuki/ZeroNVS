@@ -120,8 +120,8 @@ class SingleImageDataBase:
 
             light_position: Float[Tensor, "1 3"] = camera_position
             lookat: Float[Tensor, "1 3"] = F.normalize(center - camera_position, dim=-1)
-            right: Float[Tensor, "1 3"] = F.normalize(torch.cross(lookat, up), dim=-1)
-            up = F.normalize(torch.cross(right, lookat), dim=-1)
+            right: Float[Tensor, "1 3"] = F.normalize(torch.cross(lookat, up, dim=-1), dim=-1)
+            up = F.normalize(torch.cross(right, lookat, dim=-1), dim=-1)
             c2w: Float[Tensor, "1 3 4"] = torch.cat(
                 [
                     torch.stack([right, up, -lookat], dim=-1),

@@ -75,6 +75,9 @@ def main(args, extras) -> None:
     from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger
     from pytorch_lightning.utilities.rank_zero import rank_zero_only
 
+    ###########Set matmul precision custom
+    torch.set_float32_matmul_precision('medium')
+
     if args.typecheck:
         from jaxtyping import install_import_hook
 
@@ -127,6 +130,13 @@ def main(args, extras) -> None:
     system: BaseSystem = threestudio.find(cfg.system_type)(
         cfg.system, resumed=cfg.resume is not None
     )
+
+    # system.lpips_fn = None
+
+    # system = torch.compile(system)
+    # print(f"geom: {system.geometry}, rend: {system.renderer}, fullsys: {system}")
+    # for name, module in system.named_children():
+    #     print(name, "->", type(module))
 
     system.set_save_dir(os.path.join(cfg.trial_dir, "save"))
 
@@ -192,6 +202,10 @@ def main(args, extras) -> None:
         devices=devices,
         **cfg.trainer,
     )
+
+    ############# Torch compile
+    system.geometry = torch.compile(system.geometry)
+    # system.material = torch.compile(system.material)
 
     if args.train:
         trainer.fit(system, datamodule=dm, ckpt_path=cfg.resume)
