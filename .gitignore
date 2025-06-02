@@ -192,3 +192,7 @@ outputs-gradio/
 
 # wandb
 wandb/
+
+nerfacc/
+rs_dtu_4/
+zeronvs_diffusion/
