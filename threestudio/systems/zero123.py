@@ -65,7 +65,6 @@ class Zero123(BaseLift3DSystem):
         freq: dict = field(default_factory=dict)
         refinement: bool = False
         ambient_ratio_min: float = 0.5
-
     cfg: Config
 
     def configure(self):
@@ -113,6 +112,7 @@ class Zero123(BaseLift3DSystem):
             batch["shading"] = shading
         elif guidance == "zero123":
             batch = batch["random_camera"]
+            # print(batch)
             ambient_ratio = (
                 self.cfg.ambient_ratio_min
                 + (1 - self.cfg.ambient_ratio_min) * random.random()

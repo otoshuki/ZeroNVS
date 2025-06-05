@@ -18,6 +18,7 @@ from threestudio.utils.misc import C, parse_version
 from threestudio.utils.typing import *
 import copy
 
+from PIL import Image
 from ldm.data import common
 
 
@@ -100,7 +101,7 @@ def instantiate_from_config(config):
 
 
 # load model
-def load_model_from_config(config, ckpt, device, vram_O=True, verbose=False):
+def load_model_from_config(config, ckpt, device, vram_O=False, verbose=False):
     pl_sd = torch.load(ckpt, map_location="cpu", weights_only=False)
 
     if "global_step" in pl_sd and verbose:
@@ -169,6 +170,7 @@ class Zero123Guidance(BaseObject):
         anisotropic_offset: int = 0
 
         depth_threshold_for_anchor_guidance: float = 0.
+        gen_diffusion_images: bool = False
 
     cfg: Config
 
@@ -221,7 +223,8 @@ class Zero123Guidance(BaseObject):
         self.aux_rgbs = None
 
         self.global_step = 0  # keep track of it
-
+        if self.cfg.gen_diffusion_images:
+            os.makedirs("outputs/generated_views", exist_ok=True)
         threestudio.info(f"Loaded Zero123!")
 
     @torch.amp.autocast('cuda', enabled=False)
@@ -482,6 +485,12 @@ class Zero123Guidance(BaseObject):
             latents = self.encode_images(rgb_BCHW_512)
 
         cond, aux = self.get_cond(camera)
+
+        if self.cfg.gen_diffusion_images:
+            imgs = self.gen_from_cond(cond, ddim_steps=50, scale=self.cfg.guidance_scale)
+            for idx, img in enumerate(imgs):
+                img_pil = Image.fromarray((img * 255).astype(np.uint8))
+                img_pil.save(f"outputs/generated_views/view_{camera['azimuth'][idx].item():.1f}.png")
 
         if self.cfg.use_anisotropic_schedule:
             azimuth_deg = camera["azimuth"] % 360
@@ -755,6 +764,11 @@ class Zero123Guidance(BaseObject):
             ]
 
         imgs = self.decode_latents(latents)
+        print(latents)
         imgs = imgs.cpu().numpy().transpose(0, 2, 3, 1) if post_process else imgs
-
+        # save_dir = "outputs/generated_views"
+        # os.makedirs(save_dir, exist_ok=True)
+        # for idx, img in enumerate(imgs):
+        #     img_pil = Image.fromarray((img * 255).astype(np.uint8))
+        #     img_pil.save(os.path.join(save_dir, f"genview_{idx}.png"))
         return imgs
