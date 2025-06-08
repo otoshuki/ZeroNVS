@@ -134,8 +134,8 @@ system:
 
   guidance_type: "zero123-guidance"
   guidance:
-    pretrained_model_name_or_path: "ZeroNVS/zeronvs.ckpt"
-    pretrained_config: "ZeroNVS/zeronvs_config.yaml"
+    pretrained_model_name_or_path: "zeronvs.ckpt"
+    pretrained_config: "zeronvs_config.yaml"
     vram_O: False
     p_use_aux_cameras: [0, 1., 0., 2000]
     cond_image_path: ${data.image_path}

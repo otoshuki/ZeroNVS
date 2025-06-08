@@ -296,6 +296,7 @@ class Zero123Guidance(BaseObject):
             batch,
             precomputed_scale=self.cfg.precomputed_scale,
         )
+        # print(batch)
 
         # print(T.shape)
         T = T[:, None, :].to(self.device)
@@ -368,94 +369,11 @@ class Zero123Guidance(BaseObject):
             "fov_deg": camera["fov_deg"],
         }
 
-        if camera["aux_c2ws"]:
-            # compute conditionings if not computed already
-            if self.all_conditioning is None:
-                assert self.aux_rgbs is None
-                aux_rgbs = []
-                all_conditioning = [(self.c_crossattn, self.c_concat)]
-                for aux_c2w in camera["aux_c2ws"]:
-                    aux_batch = {
-                        "target_cam2world": aux_c2w,
-                        "cond_cam2world": cond_cam2world[:1],
-                        "fov_deg": camera["fov_deg"][:1],
-                    }
-                    aux_cond = self.get_cond_from_known_camera(
-                        aux_batch, self.c_crossattn, self.c_concat
-                    )
-
-                    aux_rgb = self.gen_from_cond(cond=aux_cond, ddim_steps=500)
-                    aux_rgbs.append(aux_rgb)
-
-                    aux_rgb = (
-                        torch.from_numpy(aux_rgb)
-                        .permute(0, 3, 1, 2)
-                        .contiguous()
-                        .to(self.device)
-                    )
-
-                    aux_c_crossattn, aux_c_concat = self.get_img_embeds(aux_rgb)
-                    all_conditioning.append((aux_c_crossattn, aux_c_concat))
-
-                self.all_conditioning = all_conditioning
-                self.aux_rgbs = aux_rgbs
-
-                # import pdb
-                # pdb.set_trace()
-
-            all_c2ws = torch.concatenate([camera["canonical_c2w"], *camera["aux_c2ws"]])
-            assert len(all_c2ws) == len(self.all_conditioning)
-
-            use_auxes = np.random.binomial(
-                n=1, p=self.p_use_aux_cameras_val, size=batch_size
-            )
-            nearest_idxs = [
-                torch.argmin(
-                    v_get_angle_between_rotations(
-                        target_cam2world_i[None].broadcast_to(all_c2ws.shape),
-                        all_c2ws,
-                    )
-                )
-                for target_cam2world_i in target_cam2world
-            ]
-            # print(torch.stack(nearest_idxs))
-            # print(use_auxes)
-            # import pdb
-            # pdb.set_trace()
-
-            batches = []
-            for i, (use_aux, nearest_idx) in enumerate(zip(use_auxes, nearest_idxs)):
-                if use_aux:
-                    batch = {
-                        "target_cam2world": target_cam2world[i],
-                        "cond_cam2world": all_c2ws[nearest_idx],
-                        "fov_deg": camera["fov_deg"][0],
-                        "c_crossattn": self.all_conditioning[nearest_idx][0][0],
-                        "c_concat": self.all_conditioning[nearest_idx][1][0],
-                    }
-                else:
-                    batch = {
-                        "target_cam2world": target_cam2world[i],
-                        "cond_cam2world": cond_cam2world[0],
-                        "fov_deg": camera["fov_deg"][0],
-                        "c_crossattn": self.c_crossattn[0],
-                        "c_concat": self.c_concat[0],
-                    }
-                batch['c_crossattn_nearest'] = self.all_conditioning[nearest_idx][0][0]
-
-                batches.append(batch)
-            batch = torch.utils.data.default_collate(batches)
-            c_crossattn_nearest = batch['c_crossattn_nearest']
-            cond = self.get_cond_from_known_camera(
-                batch, c_crossattn=batch["c_crossattn"], c_concat=batch["c_concat"]
-            )
-
-        else:
-            nearest_idxs = None
-            c_crossattn_nearest = None
-            cond = self.get_cond_from_known_camera(
-                batch, c_crossattn=self.c_crossattn, c_concat=self.c_concat
-            )
+        nearest_idxs = None
+        c_crossattn_nearest = None
+        cond = self.get_cond_from_known_camera(
+            batch, c_crossattn=self.c_crossattn, c_concat=self.c_concat
+        )
         # cond[''] = c_crossattn_nearest
         return cond, {'c_crossattn_nearest': c_crossattn_nearest, 'nearest_idxs': nearest_idxs}
 
