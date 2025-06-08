@@ -53,7 +53,7 @@ class RandomCameraDataModuleConfig:
     light_sample_strategy: str = "dreamfusion"
     batch_uniform_azimuth: bool = True
     progressive_until: int = 0  # progressive ranges for elevation, azimuth, r, fovy
-
+    batch_fixed_angles: bool = True
 
 class RandomCameraIterableDataset(IterableDataset, Updateable):
     def __init__(self, cfg: Any) -> None:
@@ -93,6 +93,7 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
         self.height: int = self.heights[0]
         self.width: int = self.widths[0]
         self.batch_size: int = self.batch_sizes[0]
+
         self.directions_unit_focal = self.directions_unit_focals[0]
         self.elevation_range = self.cfg.elevation_range
         self.azimuth_range = self.cfg.azimuth_range
@@ -141,54 +142,65 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
         # ]
 
     def collate(self, batch) -> Dict[str, Any]:
-        # sample elevation angles
-        elevation_deg: Float[Tensor, "B"]
         elevation: Float[Tensor, "B"]
-        if random.random() < 0.5:
-            # sample elevation angles uniformly with a probability 0.5 (biased towards poles)
-            elevation_deg = (
-                torch.rand(self.batch_size)
-                * (self.elevation_range[1] - self.elevation_range[0])
-                + self.elevation_range[0]
-            )
-            elevation = elevation_deg * math.pi / 180
-        else:
-            # otherwise sample uniformly on sphere
-            elevation_range_percent = [
-                (self.elevation_range[0] + 90.0) / 180.0,
-                (self.elevation_range[1] + 90.0) / 180.0,
-            ]
-            # inverse transform sampling
-            elevation = torch.asin(
-                2
-                * (
-                    torch.rand(self.batch_size)
-                    * (elevation_range_percent[1] - elevation_range_percent[0])
-                    + elevation_range_percent[0]
-                )
-                - 1.0
-            )
-            elevation_deg = elevation / math.pi * 180.0
-
-        # sample azimuth angles from a uniform distribution bounded by azimuth_range
+        elevation_deg: Float[Tensor, "B"]
+        azimuth: Float[Tensor, "B"]
         azimuth_deg: Float[Tensor, "B"]
-        if self.cfg.batch_uniform_azimuth:
-            # ensures sampled azimuth angles in a batch cover the whole range
-            azimuth_deg = (
-                torch.rand(self.batch_size) + torch.arange(self.batch_size)
-            ) / self.batch_size * (
-                self.azimuth_range[1] - self.azimuth_range[0]
-            ) + self.azimuth_range[
-                0
-            ]
+        ##Custom For fixed angles only
+        if self.cfg.batch_fixed_angles:
+            #Use the first and last values directly
+            elevation_deg = torch.tensor(self.elevation_range)
+            elevation = elevation_deg * math.pi / 180
+            azimuth_deg = torch.tensor(self.azimuth_range)
+            azimuth = azimuth_deg * math.pi / 180
         else:
-            # simple random sampling
-            azimuth_deg = (
-                torch.rand(self.batch_size)
-                * (self.azimuth_range[1] - self.azimuth_range[0])
-                + self.azimuth_range[0]
-            )
-        azimuth = azimuth_deg * math.pi / 180
+            # sample elevation angles
+            if random.random() < 0.5:
+                # sample elevation angles uniformly with a probability 0.5 (biased towards poles)
+                elevation_deg = (
+                    torch.rand(self.batch_size)
+                    * (self.elevation_range[1] - self.elevation_range[0])
+                    + self.elevation_range[0]
+                )
+                elevation = elevation_deg * math.pi / 180
+            else:
+                # otherwise sample uniformly on sphere
+                elevation_range_percent = [
+                    (self.elevation_range[0] + 90.0) / 180.0,
+                    (self.elevation_range[1] + 90.0) / 180.0,
+                ]
+                # inverse transform sampling
+                elevation = torch.asin(
+                    2
+                    * (
+                        torch.rand(self.batch_size)
+                        * (elevation_range_percent[1] - elevation_range_percent[0])
+                        + elevation_range_percent[0]
+                    )
+                    - 1.0
+                )
+                elevation_deg = elevation / math.pi * 180.0
+            # sample azimuth angles from a uniform distribution bounded by azimuth_range
+
+            if self.cfg.batch_uniform_azimuth:
+                # ensures sampled azimuth angles in a batch cover the whole range
+                azimuth_deg = (
+                    torch.rand(self.batch_size) + torch.arange(self.batch_size)
+                ) / self.batch_size * (
+                    self.azimuth_range[1] - self.azimuth_range[0]
+                ) + self.azimuth_range[
+                    0
+                ]
+            else:
+                # simple random sampling
+                azimuth_deg = (
+                    torch.rand(self.batch_size)
+                    * (self.azimuth_range[1] - self.azimuth_range[0])
+                    + self.azimuth_range[0]
+                )
+            azimuth = azimuth_deg * math.pi / 180
+            print(azimuth_deg)
+            print(azimuth)
 
         # sample distances from a uniform distribution bounded by distance_range
         camera_distances: Float[Tensor, "B"] = (
@@ -354,12 +366,12 @@ class RandomCameraDataset(Dataset):
         if self.split == "val":
             # make sure the first and last view are not the same
             # azimuth_deg = torch.linspace(0, 360.0, self.n_views + 1)[: self.n_views]
-            azimuth_deg = torch.tensor([60.0, 30, -30, -60.0])
-            self.n_views = 4
+            azimuth_deg = torch.tensor([60.0, -60.0])
+            self.n_views = 2
         else:
             # azimuth_deg = torch.linspace(0, 360.0, self.n_views)
-            azimuth_deg = torch.tensor([60.0, 30, -30, -60.0])
-            self.n_views = 4
+            azimuth_deg = torch.tensor([60.0, -60.0])
+            self.n_views = 2
         elevation_deg: Float[Tensor, "B"] = torch.full_like(
             azimuth_deg, self.cfg.eval_elevation_deg
         )

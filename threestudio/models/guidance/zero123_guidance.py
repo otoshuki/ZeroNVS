@@ -19,8 +19,8 @@ from threestudio.utils.typing import *
 import copy
 
 from PIL import Image
+import time
 from ldm.data import common
-
 
 def get_obj_from_str(string, reload=False):
     module, cls = string.rsplit(".", 1)
@@ -487,7 +487,7 @@ class Zero123Guidance(BaseObject):
         cond, aux = self.get_cond(camera)
 
         if self.cfg.gen_diffusion_images:
-            imgs = self.gen_from_cond(cond, ddim_steps=50, scale=self.cfg.guidance_scale)
+            imgs = self.gen_from_cond(cond, ddim_steps=20, scale=self.cfg.guidance_scale)
             for idx, img in enumerate(imgs):
                 img_pil = Image.fromarray((img * 255).astype(np.uint8))
                 img_pil.save(f"outputs/generated_views/view_{camera['azimuth'][idx].item():.1f}.png")
@@ -582,7 +582,6 @@ class Zero123Guidance(BaseObject):
         target = (latents - grad).detach()
         # d(loss)/d(latents) = latents - target = latents - (latents - grad) = grad
         loss_sds = 0.5 * F.mse_loss(latents, target, reduction="sum") / batch_size
-
         if aux['c_crossattn_nearest'] is not None:
             rgb_for_clip = rgb.permute((0, 3, 1,2))  # NHWC -> NCHW
             rgb_for_clip = rgb_for_clip *2 - 1
@@ -764,7 +763,7 @@ class Zero123Guidance(BaseObject):
             ]
 
         imgs = self.decode_latents(latents)
-        print(latents)
+        # print(latents)
         imgs = imgs.cpu().numpy().transpose(0, 2, 3, 1) if post_process else imgs
         # save_dir = "outputs/generated_views"
         # os.makedirs(save_dir, exist_ok=True)
