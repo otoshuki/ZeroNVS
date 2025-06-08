@@ -1,3 +1,0 @@
-[submodule "zeronvs_diffusion"]
-	path = zeronvs_diffusion
-	url = git@github.com:kylesargent/zeronvs_diffusion.git
