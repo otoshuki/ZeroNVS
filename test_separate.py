@@ -159,7 +159,6 @@ def diffuse(model, cond, scheduler, device, scale=3, ddim_steps=50):
         latents = scheduler.step(noise_pred, t, latents)["prev_sample"]
     return latents
 
-
 if __name__ == "__main__":
     device = "cuda"
     config_path = "zeronvs_config.yaml"

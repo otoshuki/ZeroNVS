@@ -10,6 +10,7 @@ from ldm.data import common
 from diffusers import DDIMScheduler
 from ldm.models.diffusion import options
 options.LDM_DISTILLATION_ONLY = True
+import time
 
 class Zero123Generator:
     def __init__(self, config_path, ckpt_path, device="cuda", precomputed_scale=0.7):
@@ -25,6 +26,9 @@ class Zero123Generator:
             set_alpha_to_one=False,
             steps_offset=1,
         )
+        self.prev_encoding = None
+        self.previous_latents = None
+        self.threshold = 0.1
 
     def load_model(self, config_path, ckpt_path):
         #Taken from zero123_guidance
@@ -39,17 +43,22 @@ class Zero123Generator:
     def encode_image(self, img):
         c_crossattn = self.model.get_learned_conditioning(img)
         c_concat = self.model.encode_first_stage(img).mode()
+        #Save encoding for future use
+        self.prev_encoding = c_concat
         return c_crossattn, c_concat
 
     def get_image(self, image_path):
-        rgba = cv2.cvtColor(cv2.imread(image_path, cv2.IMREAD_UNCHANGED), cv2.COLOR_BGRA2RGBA)
-        rgba = cv2.resize(rgba, (256, 256)).astype(np.float32) / 255.0
-        rgb = rgba[..., :3] * rgba[..., 3:] + (1 - rgba[..., 3:])
+        rgb = cv2.cvtColor(cv2.imread(image_path, cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB)
+        return self.process_image(rgb)
+
+    def process_image(self, rgb):
+        # print(rgb.shape)
+        rgb = cv2.resize(rgb, (256, 256)).astype(np.float32) / 255.0
         rgb_tensor = torch.from_numpy(rgb).permute(2, 0, 1).unsqueeze(0).to(self.device)
         img = rgb_tensor * 2 - 1
         return img
 
-    def generate_c2ws(self, azimuths_deg=[60, -60], default_elv=20.0, default_fovy=50.0, default_camera_distance=1.0):
+    def generate_c2ws(self, azimuths_deg=[60, -60], default_elv=30.0, default_fovy=60.0, default_camera_distance=1.0):
         #Generates canonical c2w and generate-able c2ws
         #Modified from threestudio/data/image/SingleImageDataBase
         elevation_deg = torch.FloatTensor([default_elv])
@@ -147,6 +156,7 @@ class Zero123Generator:
         return cond
 
     def diffuse(self, cond, scale=3, ddim_steps=50):
+        # start = time.time()
         B = cond["c_crossattn"][0].shape[0] // 2
         latents = torch.randn((B, 4, 32, 32), device=self.device)
         self.scheduler.set_timesteps(ddim_steps)
@@ -157,23 +167,73 @@ class Zero123Generator:
             noise_pred_uncond, noise_pred_cond = noise_pred.chunk(2)
             noise_pred = noise_pred_uncond + scale * (noise_pred_cond - noise_pred_uncond)
             latents = self.scheduler.step(noise_pred, t, latents)["prev_sample"]
+        # print(f"Time Taken: {time.time() - start}")
+        return latents
+
+    def diffuse_with_mask(self, cond, mask, scale=3, ddim_steps=50):
+        """
+        Does not work well, do not use
+        """
+        B = cond["c_crossattn"][0].shape[0] // 2
+        if mask.shape[1] == 1:
+            mask = mask.repeat(B, 4, 1, 1)
+        mask = mask.to(self.device)
+        if not hasattr(self, "previous_latents") or self.previous_latents is None:
+            latents = torch.randn((B, 4, 32, 32), device=self.device)
+            self.previous_latents = latents.detach()
+        else:
+            noise = torch.randn_like(self.previous_latents)
+            latents = mask * noise + (1 - mask) * self.previous_latents
+        self.scheduler.set_timesteps(ddim_steps)
+        for t in self.scheduler.timesteps:
+            x_in = torch.cat([latents] * 2)
+            t_in = torch.cat([t.reshape(1).repeat(B)] * 2).to(self.device)
+            noise_pred = self.model.apply_model(x_in, t_in, cond)
+            noise_pred_uncond, noise_pred_cond = noise_pred.chunk(2)
+            noise_pred = noise_pred_uncond + scale * (noise_pred_cond - noise_pred_uncond)
+            latents = self.scheduler.step(noise_pred, t, latents)["prev_sample"]
+            latents = mask * latents + (1 - mask) * self.previous_latents
         return latents
 
     def decode_latents(self, latents):
         input_dtype = latents.dtype
         image = self.model.decode_first_stage(latents)
-        image = (image * 0.5 + 0.5).clamp(0, 1)
-        return image.to(input_dtype)
+        image = (image * 0.5 + 0.5).clamp(0, 1).to(input_dtype).detach().cpu().numpy().transpose(0, 2, 3, 1)
+        resized_image = np.array([cv2.resize(img, (128, 128)) for img in image])
+        resized_image = (resized_image*255).astype(np.uint8)
+        return resized_image
 
-    def generate_latents(self, image_path, azimuths_deg=[60, -60], scale=7.5, ddim_steps=20):
-        img = self.get_image(image_path)
+    def generate_latents(self, img, azimuths_deg=[60, -60], default_elv=30.0, default_fovy=90.0, default_camera_distance=1.0, scale=7.5, ddim_steps=20):
         c_crossattn, c_concat = self.encode_image(img)
-        can_c2w, target_c2ws, fovy = self.generate_c2ws(azimuths_deg=azimuths_deg)
+        can_c2w, target_c2ws, fovy = self.generate_c2ws(azimuths_deg=azimuths_deg, default_elv=default_elv, default_fovy=default_fovy, default_camera_distance=default_camera_distance)
         cond = self.make_condition(c_crossattn, c_concat, target_c2ws, can_c2w, fovy)
-        latents = self.diffuse(cond, scale=scale, ddim_steps=ddim_steps)
+        with torch.no_grad():
+            latents = self.diffuse(cond, scale=scale, ddim_steps=ddim_steps)
+        self.previous_latents = latents.detach()
+        return latents
+
+    def generate_latents_with_mask(self, img, azimuths_deg=[60, -60], default_elv=30.0, default_fovy=90.0, default_camera_distance=1.0, scale=7.5, ddim_steps=20):
+        #First copy previous encoding to obtain mask
+        prev_encoding = self.prev_encoding
+        #Obtain new encoding
+        c_crossattn, c_concat = self.encode_image(img)
+        if prev_encoding is None:
+            #If no previous encoding, ones
+            mask = torch.ones((1, 4, 32, 32), device=self.device)
+        else:
+            #Generate mask
+            diff = torch.abs(prev_encoding - c_concat).mean(dim=1, keepdim=True)
+            mask = (diff > self.threshold).float()
+        #Generate conditioning
+        can_c2w, target_c2ws, fovy = self.generate_c2ws(azimuths_deg=azimuths_deg, default_elv=default_elv, default_fovy=default_fovy, default_camera_distance=default_camera_distance)
+        cond = self.make_condition(c_crossattn, c_concat, target_c2ws, can_c2w, fovy)
+        #Generate latent with mask
+        with torch.no_grad():
+            latents = self.diffuse_with_mask(cond, mask, scale=scale, ddim_steps=ddim_steps)
+        self.previous_latents = latents.detach()
         return latents
 
     def generate_views_from_latents(self, latents):
-        images = self.decode_latents(latents).detach().cpu().numpy().transpose(0, 2, 3, 1)
-        outputs = [Image.fromarray((img * 255).astype(np.uint8)) for img in images]
+        images = self.decode_latents(latents)
+        outputs = [Image.fromarray(img) for img in images]
         return outputs

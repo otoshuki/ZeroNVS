@@ -1,3 +1,8 @@
+import sys
+import os
+
+sys.path.append(os.path.abspath("ZeroNVS"))
+
 from zero123gen import Zero123Generator
 
 if __name__ == "__main__":
