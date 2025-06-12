@@ -14,6 +14,7 @@ model:
     cond_stage_trainable: false
     conditioning_key: hybrid
     monitor: val/loss_simple_ema
+    use_ema: true
     scale_factor: 0.18215
     conditioning_config:
       params:
@@ -54,7 +55,7 @@ model:
         use_spatial_transformer: true
         transformer_depth: 1
         context_dim: 768
-        use_checkpoint: true
+        use_checkpoint: false
         legacy: false
     eval_config:
       params:

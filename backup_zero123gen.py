@@ -9,16 +9,14 @@ from ldm.util import instantiate_from_config
 from ldm.data import common
 from diffusers import DDIMScheduler
 from ldm.models.diffusion import options
-from ldm.modules.attention import CrossAttention
-options.LDM_DISTILLATION_ONLY = False
+options.LDM_DISTILLATION_ONLY = True
 import time
 
 class Zero123Generator:
-    def __init__(self, config_path, ckpt_path, device="cuda", precomputed_scale=0.7, dont_eval=False):
+    def __init__(self, config_path, ckpt_path, device="cuda", precomputed_scale=0.7):
         self.device = device
         self.precomputed_scale = precomputed_scale
-        #If adding new layers, we don't evaluate it first
-        self.model, self.config = self.load_model(config_path, ckpt_path, dont_eval)
+        self.model, self.config = self.load_model(config_path, ckpt_path)
         self.scheduler = DDIMScheduler(
             num_train_timesteps=self.config.model.params.timesteps,
             beta_start=self.config.model.params.linear_start,
@@ -31,19 +29,15 @@ class Zero123Generator:
         self.previous_latents = None
         self.threshold = 0.1
 
-    def load_model(self, config_path, ckpt_path, dont_eval=False):
+    def load_model(self, config_path, ckpt_path):
         #Taken from zero123_guidance
         config = OmegaConf.load(config_path)
         #Set depth model to None
         config.model.params.conditioning_config.params.depth_model_name = None
         model = instantiate_from_config(config.model)
         state_dict = torch.load(ckpt_path, map_location="cpu", weights_only=False)["state_dict"]
-        # state_dict = torch.load(ckpt_path, map_location="cpu", weights_only=False)
         model.load_state_dict(state_dict, strict=False)
-        if dont_eval:
-            return model, config
-        else:
-            return model.to(self.device).eval(), config
+        return model.to(self.device).eval(), config
 
     def encode_image(self, img):
         c_crossattn = self.model.get_learned_conditioning(img)
@@ -61,11 +55,11 @@ class Zero123Generator:
         img = rgb_tensor * 2 - 1
         return img
 
-    def generate_c2ws(self, gen_azm=[60, -60], gen_elv=20, gen_camera_distance=1.2, default_elv=30.0, default_azm=0, default_fovy=60.0, default_camera_distance=1.0):
+    def generate_c2ws(self, gen_azm=[60, -60], gen_elv=20, default_elv=30.0, default_fovy=60.0, default_camera_distance=1.0):
         #Generates canonical c2w and generate-able c2ws
         #Modified from threestudio/data/image/SingleImageDataBase
         elevation_deg = torch.FloatTensor([default_elv])
-        azimuth_deg = torch.FloatTensor([default_azm])
+        azimuth_deg = torch.FloatTensor([0])
         camera_distance = torch.FloatTensor([default_camera_distance])
         elevation = elevation_deg * math.pi / 180
         azimuth = azimuth_deg * math.pi / 180
@@ -106,7 +100,7 @@ class Zero123Generator:
         def get_sides(gen_azm):
             gen_azm = torch.tensor(gen_azm, dtype=torch.float32)
             azimuths = gen_azm * math.pi / 180
-            distances = torch.full_like(azimuths, gen_camera_distance)
+            distances = torch.full_like(azimuths, default_camera_distance)
             camera_positions = torch.stack([
                 distances * torch.cos(elevation) * torch.cos(azimuths),
                 distances * torch.cos(elevation) * torch.sin(azimuths),
@@ -151,11 +145,11 @@ class Zero123Generator:
         clip_emb = self.model.cc_projection(clip_input)
         #Final conditioning
         cond = {
-            "c_crossattn": [torch.cat([torch.zeros_like(clip_emb), clip_emb], dim=0).to(self.device)],
+            "c_crossattn": [torch.cat([torch.zeros_like(clip_emb), clip_emb], dim=0)],
             "c_concat": [torch.cat([
                 torch.zeros_like(c_concat).repeat(len(T), 1, 1, 1),
                 c_concat.repeat(len(T), 1, 1, 1)
-            ], dim=0).to(self.device)]
+            ], dim=0)]
         }
         return cond
 
@@ -170,14 +164,46 @@ class Zero123Generator:
             noise_pred = self.model.apply_model(x_in, t_in, cond)
             noise_pred_uncond, noise_pred_cond = noise_pred.chunk(2)
             noise_pred = noise_pred_uncond + scale * (noise_pred_cond - noise_pred_uncond)
-            # If trained only on conditioned inputs
-            # noise_pred = noise_pred_cond
             latents = self.scheduler.step(noise_pred, t, latents)["prev_sample"]
         # print(f"Time Taken: {time.time() - start}")
         return latents
 
     def reset_latent(self):
         self.previous_latents = None
+
+    # def diffuse_with_jump(self, cond, scale=3, ddim_steps=50):
+    #     B = cond["c_crossattn"][0].shape[0] // 2
+    #     #First check if previous_latent is none
+    #     self.scheduler.set_timesteps(ddim_steps)
+    #     store_index = ddim_steps - 4
+    #     #For the first step perform full step and store a checkpoint
+    #     if self.previous_latents is None:
+    #         latents = torch.randn((B, 4, 32, 32), device=self.device)
+    #         store_time = self.scheduler.timesteps[store_index]
+    #         for t in self.scheduler.timesteps:
+    #             x_in = torch.cat([latents] * 2)
+    #             t_in = torch.cat([t.reshape(1).repeat(B)] * 2).to(self.device)
+    #             noise_pred = self.model.apply_model(x_in, t_in, cond)
+    #             noise_pred_uncond, noise_pred_cond = noise_pred.chunk(2)
+    #             noise_pred = noise_pred_uncond + scale * (noise_pred_cond - noise_pred_uncond)
+    #             latents = self.scheduler.step(noise_pred, t, latents)["prev_sample"]
+    #             if t == store_time:
+    #                 self.previous_latents = latents.detach()
+    #     else:
+    #         #If previous latent is found, start from the stored latent
+    #         timesteps = self.scheduler.timesteps[store_index: ddim_steps] #For example, from 45 to 50
+    #         noise = torch.randn_like(self.previous_latents)
+    #         latents = 0.9 * self.previous_latents + 0.1 * noise
+    #         # latents = self.previous_latents
+    #         for t in timesteps:
+    #             x_in = torch.cat([latents] * 2)
+    #             t_in = torch.cat([t.reshape(1).repeat(B)] * 2).to(self.device)
+    #             noise_pred = self.model.apply_model(x_in, t_in, cond)
+    #             noise_pred_uncond, noise_pred_cond = noise_pred.chunk(2)
+    #             noise_pred = noise_pred_uncond + scale * (noise_pred_cond - noise_pred_uncond)
+    #             latents = self.scheduler.step(noise_pred, t, latents)["prev_sample"]
+    #         # self.previous_latents = latents.detach()
+    #     return latents
 
     def decode_latents(self, latents):
         input_dtype = latents.dtype
@@ -187,16 +213,26 @@ class Zero123Generator:
         resized_image = (resized_image*255).astype(np.uint8)
         return resized_image
 
-    def generate_latents(self, img, gen_azm=[60, -60], gen_elv=20, gen_camera_distance=1.2, default_elv=30.0, default_azm=0, default_fovy=90.0, default_camera_distance=1.0, scale=7.5, ddim_steps=20):
+    def generate_latents(self, img, gen_azm=[60, -60], gen_elv=20, default_elv=30.0, default_fovy=90.0, default_camera_distance=1.0, scale=7.5, ddim_steps=20):
         c_crossattn, c_concat = self.encode_image(img)
-        can_c2w, target_c2ws, fovy = self.generate_c2ws(gen_azm=gen_azm, gen_elv=gen_elv, gen_camera_distance=gen_camera_distance, default_elv=default_elv, default_azm=default_azm, default_fovy=default_fovy, default_camera_distance=default_camera_distance)
+        can_c2w, target_c2ws, fovy = self.generate_c2ws(gen_azm=gen_azm, gen_elv=gen_elv, default_elv=default_elv, default_fovy=default_fovy, default_camera_distance=default_camera_distance)
         cond = self.make_condition(c_crossattn, c_concat, target_c2ws, can_c2w, fovy)
         with torch.no_grad():
             latents = self.diffuse(cond, scale=scale, ddim_steps=ddim_steps)
         self.previous_latents = latents.detach()
         return latents
 
+    # def generate_latents_with_jump(self, img, gen_azm=[60, -60], gen_elv=20, default_elv=30.0, default_fovy=90.0, default_camera_distance=1.0, scale=7.5, ddim_steps=20):
+    #     c_crossattn, c_concat = self.encode_image(img)
+    #     can_c2w, target_c2ws, fovy = self.generate_c2ws(gen_azm=gen_azm, gen_elv=gen_elv, default_elv=default_elv, default_fovy=default_fovy, default_camera_distance=default_camera_distance)
+    #     cond = self.make_condition(c_crossattn, c_concat, target_c2ws, can_c2w, fovy)
+    #     with torch.no_grad():
+    #         latents = self.diffuse_with_jump(cond, scale=scale, ddim_steps=ddim_steps)
+    #     self.previous_latents = latents.detach()
+    #     return latents
+
     def generate_views_from_latents(self, latents):
         images = self.decode_latents(latents)
         outputs = [Image.fromarray(img) for img in images]
         return outputs
+bac
